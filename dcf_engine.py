@@ -11,13 +11,24 @@ Designed to be dropped straight into a Python API (FastAPI/Flask) as the
 calculation layer. Each function returns plain dicts/DataFrames so it's
 easy to json-serialize for a Next.js frontend.
  
-Install: pip install yfinance pandas numpy
+Install: pip install yfinance pandas numpy curl_cffi
 """
  
 from __future__ import annotations
 import numpy as np
 import pandas as pd
 import yfinance as yf
+ 
+# yfinance scrapes Yahoo Finance rather than using an official API, and
+# Yahoo has tightened bot detection significantly -- plain requests from
+# cloud server IPs (Render, AWS, etc.) get blocked/rate-limited far more
+# than requests from a home connection. curl_cffi impersonates a real
+# browser's TLS fingerprint, which is the current standard workaround.
+try:
+    from curl_cffi import requests as cffi_requests
+    _SESSION = cffi_requests.Session(impersonate="chrome")
+except ImportError:
+    _SESSION = None  # falls back to yfinance's default session
  
  
 # ---------------------------------------------------------------------------
@@ -34,7 +45,7 @@ def _first_available(df: pd.DataFrame, candidates: list[str]) -> pd.Series | Non
  
 def fetch_company_data(ticker: str) -> dict:
     """Pull everything needed for a DCF from Yahoo Finance."""
-    t = yf.Ticker(ticker)
+    t = yf.Ticker(ticker, session=_SESSION) if _SESSION else yf.Ticker(ticker)
     info = t.info or {}
  
     income = t.financials          # annual income statement (most recent col first)

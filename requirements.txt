@@ -3,3 +3,5 @@ uvicorn
 yfinance
 pandas
 numpy
+curl_cffi
+ 
