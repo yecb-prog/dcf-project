@@ -104,12 +104,29 @@ def fetch_company_data(ticker: str) -> dict:
     except Exception:
         pass  # keep the 5% fallback
  
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    shares_outstanding = info.get("sharesOutstanding")
+ 
+    # market_cap sometimes comes back missing from yfinance's .info (more
+    # common from cloud/server IPs than from a home connection). Fall back
+    # to computing it ourselves -- price x shares -- rather than crashing
+    # downstream in calculate_wacc().
+    market_cap = info.get("marketCap")
+    if market_cap is None and current_price is not None and shares_outstanding is not None:
+        market_cap = current_price * shares_outstanding
+ 
+    if current_price is None or shares_outstanding is None or market_cap is None:
+        raise ValueError(
+            f"Missing critical price/share data for {ticker} -- yfinance may be "
+            f"rate-limiting or this ticker may not have complete data available."
+        )
+ 
     data = {
         "ticker": ticker.upper(),
         "company_name": info.get("shortName", ticker),
-        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-        "shares_outstanding": info.get("sharesOutstanding"),
-        "market_cap": info.get("marketCap"),
+        "current_price": current_price,
+        "shares_outstanding": shares_outstanding,
+        "market_cap": market_cap,
         "beta": info.get("beta") or 1.0,
         "total_debt": total_debt_value,
         "cash": float(cash.iloc[0]) if cash is not None else 0.0,
