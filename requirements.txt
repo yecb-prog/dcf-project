@@ -1,4 +1,3 @@
-fastapi uvicorn yfinance pandas numpy
 fastapi
 uvicorn
 yfinance
