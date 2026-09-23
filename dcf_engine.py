@@ -15,6 +15,7 @@ Install: pip install yfinance pandas numpy curl_cffi
 """
  
 from __future__ import annotations
+import time
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -24,11 +25,23 @@ import yfinance as yf
 # cloud server IPs (Render, AWS, etc.) get blocked/rate-limited far more
 # than requests from a home connection. curl_cffi impersonates a real
 # browser's TLS fingerprint, which is the current standard workaround.
+#
+# IMPORTANT: create a NEW session per request rather than one shared global
+# session. Yahoo Finance uses a "crumb" security token tied to a session's
+# cookies; FastAPI runs requests concurrently across threads, and sharing
+# one session object across concurrent requests can corrupt that crumb,
+# causing "Invalid Crumb" 401 errors. A fresh session per call avoids this.
 try:
     from curl_cffi import requests as cffi_requests
-    _SESSION = cffi_requests.Session(impersonate="chrome")
+    _CURL_CFFI_AVAILABLE = True
 except ImportError:
-    _SESSION = None  # falls back to yfinance's default session
+    _CURL_CFFI_AVAILABLE = False
+ 
+ 
+def _new_session():
+    if _CURL_CFFI_AVAILABLE:
+        return cffi_requests.Session(impersonate="chrome")
+    return None  # falls back to yfinance's default session
  
  
 # ---------------------------------------------------------------------------
@@ -43,9 +56,29 @@ def _first_available(df: pd.DataFrame, candidates: list[str]) -> pd.Series | Non
     return None
  
  
-def fetch_company_data(ticker: str) -> dict:
-    """Pull everything needed for a DCF from Yahoo Finance."""
-    t = yf.Ticker(ticker, session=_SESSION) if _SESSION else yf.Ticker(ticker)
+def fetch_company_data(ticker: str, _retries: int = 3) -> dict:
+    """
+    Pull everything needed for a DCF from Yahoo Finance, with automatic
+    retry. Yahoo's "crumb" auth token occasionally fails on the first
+    attempt (a widely-reported, ongoing issue with yfinance -- see
+    github.com/ranaroussi/yfinance/issues -- not specific to this app) but
+    frequently succeeds on a retry with a fresh session. A short delay
+    between attempts gives Yahoo's session negotiation room to recover.
+    """
+    last_error = None
+    for attempt in range(_retries):
+        try:
+            return _fetch_company_data_once(ticker)
+        except Exception as e:
+            last_error = e
+            if attempt < _retries - 1:
+                time.sleep(1.5)
+    raise last_error
+ 
+ 
+def _fetch_company_data_once(ticker: str) -> dict:
+    session = _new_session()
+    t = yf.Ticker(ticker, session=session) if session else yf.Ticker(ticker)
     info = t.info or {}
  
     income = t.financials          # annual income statement (most recent col first)
