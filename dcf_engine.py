@@ -56,7 +56,7 @@ def _first_available(df: pd.DataFrame, candidates: list[str]) -> pd.Series | Non
     return None
  
  
-def fetch_company_data(ticker: str, _retries: int = 3) -> dict:
+def fetch_company_data(ticker: str, _retries: int = 2) -> dict:
     """
     Pull everything needed for a DCF from Yahoo Finance, with automatic
     retry. Yahoo's "crumb" auth token occasionally fails on the first
